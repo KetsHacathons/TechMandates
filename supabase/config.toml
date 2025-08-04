@@ -1,0 +1,19 @@
+project_id = "hbxbmrffzlmkuahhsfwx"
+
+[functions.create-upgrade-pr]
+verify_jwt = false
+
+[functions.detect-current-version]
+verify_jwt = false
+
+[functions.fix-vulnerability]
+verify_jwt = false
+
+[functions.improve-coverage]
+verify_jwt = false
+
+[functions.security-scan]
+verify_jwt = false
+
+[functions.fetch-coverage-data]
+verify_jwt = false
