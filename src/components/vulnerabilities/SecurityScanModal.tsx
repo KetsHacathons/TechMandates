@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { type Repository } from "@/hooks/useRepositories";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { Shield, AlertTriangle, Bug, Package, RefreshCw } from "lucide-react";
 
 interface SecurityScanModalProps {
@@ -111,17 +111,15 @@ export function SecurityScanModal({ open, onOpenChange, repositories, onScanResu
       ));
 
       try {
-        const { data, error } = await sqlite.functions.invoke('security-scan', {
-          body: {
-            repositoryId,
-            repositoryName: repo.name,
-            fullName: repo.full_name,
-            language: repo.language
-          }
+        const result = await apiClient.runSecurityScan({
+          repositoryId,
+          repositoryName: repo.name,
+          fullName: repo.full_name,
+          language: repo.language
         });
 
-        if (!error && data?.success && data.vulnerabilities) {
-          const repoVulnerabilities = data.vulnerabilities.map((vuln: any) => ({
+        if (result.data?.success && result.data.vulnerabilities) {
+          const repoVulnerabilities = result.data.vulnerabilities.map((vuln: any) => ({
             ...vuln,
             repository: repo.name,
             repositoryId: repo.id,

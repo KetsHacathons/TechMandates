@@ -46,8 +46,8 @@ const getErrorDetails = (error: string, repositoryName?: string) => {
         ],
         links: [
           {
-            text: "Update GitHub Token in Supabase",
-            url: "https://supabase.com/dashboard/project/hbxbmrffzlmkuahhsfwx/settings/functions"
+                    text: "Update GitHub Token in Settings",
+        url: "/settings"
           },
           {
             text: "Create New GitHub Token",

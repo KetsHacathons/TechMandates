@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { type Repository } from "@/hooks/useRepositories";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { RefreshCw, Package, TrendingUp, AlertTriangle } from "lucide-react";
 
 interface ScanUpdatesModalProps {
@@ -109,15 +109,13 @@ export function ScanUpdatesModal({ open, onOpenChange, repositories, onScanResul
 
       for (const technology of relevantTechnologies) {
         try {
-          const { data, error } = await sqlite.functions.invoke('detect-current-version', {
-            body: {
-              repositoryId: repo.id,
-              technology: technology
-            }
+          const result = await apiClient.detectCurrentVersion({
+            repositoryId: repo.id,
+            technology: technology
           });
 
-          if (!error && data?.success && data.currentVersion) {
-            const currentVersion = data.currentVersion;
+          if (result.data?.success && result.data.currentVersion) {
+            const currentVersion = result.data.currentVersion;
             const availableVersions = technologyVersions[technology as keyof typeof technologyVersions] || [];
             const latestVersion = availableVersions[0] || "";
             const needsUpdate = currentVersion !== latestVersion && availableVersions.includes(currentVersion);

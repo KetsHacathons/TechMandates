@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@/integrations/sqlite/client';
-import { sqlite } from '@/integrations/sqlite/client';
+import { User, AuthResponse } from '@/integrations/api/types';
+import { apiClient } from '@/integrations/api/client';
 
 interface AuthContextType {
   user: User | null;
-  session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signUp: (email: string, password: string) => Promise<{ error: any }>;
@@ -27,46 +26,62 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = sqlite.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    // Check for existing session on mount
+    const checkAuth = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          const currentUser = await apiClient.getCurrentUser();
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        // Clear invalid token
+        localStorage.removeItem('access_token');
+      } finally {
         setLoading(false);
       }
-    );
+    };
 
-    // THEN check for existing session
-    sqlite.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    checkAuth();
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await sqlite.auth.signInWithPassword(email, password);
-    return { error };
+    try {
+      const response: AuthResponse = await apiClient.login(email, password);
+      setUser(response.user);
+      return { error: null };
+    } catch (error: any) {
+      console.error('Sign in failed:', error);
+      return { error: error.message || 'Sign in failed' };
+    }
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await sqlite.auth.signUp(email, password);
-    return { error };
+    try {
+      const response: AuthResponse = await apiClient.register(email, password);
+      setUser(response.user);
+      return { error: null };
+    } catch (error: any) {
+      console.error('Sign up failed:', error);
+      return { error: error.message || 'Sign up failed' };
+    }
   };
 
   const signOut = async () => {
-    await sqlite.auth.signOut();
+    try {
+      await apiClient.logout();
+      setUser(null);
+    } catch (error) {
+      console.error('Sign out failed:', error);
+    }
   };
 
   const value = {
     user,
-    session,
     loading,
     signIn,
     signUp,

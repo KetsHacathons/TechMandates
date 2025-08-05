@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { apiClient } from '@/integrations/api/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 export interface ProviderAccount {
@@ -29,17 +29,13 @@ export function useProviderAccounts() {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('provider_accounts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const result = await apiClient.getProviderAccounts();
 
-      if (error) {
-        console.error('Error fetching provider accounts:', error);
-        setError(error.message);
+      if (!result.data?.success) {
+        console.error('Error fetching provider accounts:', result.error);
+        setError(result.error || 'Failed to fetch provider accounts');
       } else {
-        setProviderAccounts(data || []);
+        setProviderAccounts(result.data.providerAccounts || []);
       }
     } catch (err) {
       console.error('Error fetching provider accounts:', err);
@@ -53,23 +49,19 @@ export function useProviderAccounts() {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      const { data, error } = await supabase
-        .from('provider_accounts')
-        .upsert({
-          user_id: user.id,
-          provider: provider.toLowerCase(),
-          provider_account_id: `${provider.toLowerCase()}_${user.id}`,
-          access_token: token,
-          scope: 'repo',
-        })
-        .select()
-        .single();
+      const result = await apiClient.saveProviderAccount({
+        provider: provider.toLowerCase(),
+        access_token: token,
+        scope: 'repo',
+      });
 
-      if (error) throw error;
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to save provider account');
+      }
 
       // Refresh the list
       await fetchProviderAccounts();
-      return data;
+      return result.data.providerAccount;
     } catch (error) {
       console.error('Error saving provider account:', error);
       throw error;

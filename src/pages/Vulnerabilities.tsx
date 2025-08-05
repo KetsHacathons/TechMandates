@@ -12,7 +12,7 @@ import { ReportGenerationModal } from "@/components/vulnerabilities/ReportGenera
 import { useAuth } from "@/contexts/AuthContext";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useToast } from "@/hooks/use-toast";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { 
   Shield,
   AlertTriangle,
@@ -40,7 +40,7 @@ const Vulnerabilities = () => {
   const [selectedVulnerability, setSelectedVulnerability] = useState<any>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  // Load vulnerabilities from localStorage on component mount
+  // Load vulnerabilities from API
   const [scannedVulnerabilities, setScannedVulnerabilities] = useState<Array<{
     id: string;
     title: string;
@@ -55,16 +55,22 @@ const Vulnerabilities = () => {
     status: string;
     discoveredDate: string;
     description: string;
-  }>>(() => {
-    // Load from localStorage on initialization
-    const saved = localStorage.getItem('scannedVulnerabilities');
-    return saved ? JSON.parse(saved) : [];
-  });
+  }>>([]);
 
-  // Save to localStorage whenever vulnerabilities change
+  // Load vulnerabilities on component mount
   useEffect(() => {
-    localStorage.setItem('scannedVulnerabilities', JSON.stringify(scannedVulnerabilities));
-  }, [scannedVulnerabilities]);
+    const loadVulnerabilities = async () => {
+      try {
+        const result = await apiClient.getVulnerabilities();
+        if (result.data?.success) {
+          setScannedVulnerabilities(result.data.vulnerabilities || []);
+        }
+      } catch (error) {
+        console.error('Failed to load vulnerabilities:', error);
+      }
+    };
+    loadVulnerabilities();
+  }, []);
   const handleScanResults = (results: Array<{
     id: string;
     title: string;
@@ -92,23 +98,17 @@ const Vulnerabilities = () => {
         description: `Creating pull request to fix ${vuln.package} vulnerability...`
       });
 
-      const { data: result, error } = await sqlite.functions.invoke('fix-vulnerability', {
-        body: {
-          repositoryId: vuln.repositoryId,
-          vulnerabilityId: vuln.id,
-          packageName: vuln.package,
-          currentVersion: vuln.version,
-          fixedVersion: vuln.fixedIn,
-          repositoryFullName: repositories.find(r => r.id === vuln.repositoryId)?.full_name || ''
-        }
+      const result = await apiClient.fixVulnerability({
+        repositoryId: vuln.repositoryId,
+        vulnerabilityId: vuln.id,
+        packageName: vuln.package,
+        currentVersion: vuln.version,
+        fixedVersion: vuln.fixedIn,
+        repositoryFullName: repositories.find(r => r.id === vuln.repositoryId)?.full_name || ''
       });
 
-      if (error) {
-        throw error;
-      }
-
-      if (!result.success) {
-        throw new Error(result.error);
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to fix vulnerability');
       }
 
       // Update vulnerability status to in-progress
@@ -120,26 +120,26 @@ const Vulnerabilities = () => {
         )
       );
 
-      toast({
-        title: "Fix Pull Request Created! 🎉",
-        description: (
-          <div className="space-y-2">
-            <p>Successfully created PR #{result.pullRequestNumber} to fix {vuln.package}</p>
-            <p className="text-sm text-muted-foreground">
-              Please review and merge the pull request to apply the security fix.
-            </p>
-            <a 
-              href={result.pullRequestUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-primary hover:underline"
-            >
-              View Pull Request →
-            </a>
-          </div>
-        ),
-        duration: 10000,
-      });
+              toast({
+          title: "Fix Pull Request Created! 🎉",
+          description: (
+            <div className="space-y-2">
+              <p>Successfully created PR #{result.data.pullRequestNumber} to fix {vuln.package}</p>
+              <p className="text-sm text-muted-foreground">
+                Please review and merge the pull request to apply the security fix.
+              </p>
+              <a 
+                href={result.data.pullRequestUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-primary hover:underline"
+              >
+                View Pull Request →
+              </a>
+            </div>
+          ),
+          duration: 10000,
+        });
 
     } catch (error) {
       console.error('Vulnerability fix failed:', error);

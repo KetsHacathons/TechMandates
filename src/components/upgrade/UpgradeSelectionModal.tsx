@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { type Repository } from "@/hooks/useRepositories";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { UpgradeReportGenerator } from "./UpgradeReportGenerator";
 
 interface UpgradeSelectionModalProps {
@@ -64,17 +64,15 @@ export function UpgradeSelectionModal({
         setCurrentVersion(null);
         
         try {
-          const { data, error } = await sqlite.functions.invoke('detect-current-version', {
-            body: {
-              repositoryId: selectedRepository,
-              technology: selectedTechnology
-            }
+          const result = await apiClient.detectCurrentVersion({
+            repositoryId: selectedRepository,
+            technology: selectedTechnology
           });
 
-          if (error) {
-            console.error('Error detecting version:', error);
-          } else if (data?.success) {
-            setCurrentVersion(data.currentVersion);
+          if (!result.data?.success) {
+            console.error('Error detecting version:', result.error);
+          } else if (result.data?.success) {
+            setCurrentVersion(result.data.currentVersion);
           }
         } catch (error) {
           console.error('Error detecting version:', error);

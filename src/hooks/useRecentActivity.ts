@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { sqlite } from '@/integrations/sqlite/client';
+import { apiClient } from '@/integrations/api/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 export interface ActivityItem {
@@ -119,39 +119,9 @@ export function useRecentActivity() {
   };
 
   const loadPersistedData = () => {
-    try {
-      // Load vulnerabilities from localStorage
-      const savedVulnerabilities = localStorage.getItem('scannedVulnerabilities');
-      const vulnerabilities = savedVulnerabilities ? JSON.parse(savedVulnerabilities) : [];
-      
-      // Load version upgrades from localStorage
-      const savedUpgrades = localStorage.getItem('scannedUpgrades');
-      const upgrades = savedUpgrades ? JSON.parse(savedUpgrades) : [];
-      
-      // Convert vulnerabilities to activities
-      const vulnerabilityActivities: ActivityItem[] = vulnerabilities.map((vuln: any) => 
-        generateActivityFromScanResult(vuln, { name: vuln.repository }, 'local')
-      );
-      
-      // Convert upgrades to activities
-      const upgradeActivities: ActivityItem[] = upgrades.map((upgrade: any) => 
-        generateActivityFromScanResult({
-          id: `upgrade-${upgrade.repositoryId}-${upgrade.technology}`,
-          scan_type: 'version',
-          technology: upgrade.technology,
-          currentVersion: upgrade.currentVersion,
-          targetVersion: upgrade.targetVersion,
-          status: upgrade.status,
-          repository_id: upgrade.repositoryId,
-          created_at: new Date().toISOString() // Use current time as fallback
-        }, { name: upgrade.repository }, 'local')
-      );
-      
-      return [...vulnerabilityActivities, ...upgradeActivities];
-    } catch (error) {
-      console.error('Error loading persisted data:', error);
-      return [];
-    }
+    // No longer using localStorage for business data
+    // Activities are now fetched from the API
+    return [];
   };
 
   const fetchRecentActivity = async () => {
@@ -167,50 +137,25 @@ export function useRecentActivity() {
       setLoading(true);
       setError(null);
 
-      // Load persisted data first
-      const persistedActivities = loadPersistedData();
-
       // Fetch recent scan results with repository information
-      const { data: scanResults, error: scanError } = await sqlite
-        .from('scan_results')
-        .select(`
-          *,
-          repositories!inner(
-            id,
-            name,
-            full_name,
-            user_id
-          )
-        `)
-        .eq('repositories.user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const result = await apiClient.getScanResults({
+        limit: 20,
+        orderBy: 'created_at',
+        orderDirection: 'desc'
+      });
 
-      if (scanError) throw scanError;
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to fetch scan results');
+      }
 
       // Transform scan results into activity items
-      const databaseActivities: ActivityItem[] = (scanResults || []).map(scanResult => 
-        generateActivityFromScanResult(scanResult, scanResult.repositories, 'database')
+      const activities: ActivityItem[] = (result.data.scanResults || []).map(scanResult => 
+        generateActivityFromScanResult(scanResult, scanResult.repository, 'database')
       );
 
-      // Combine and sort all activities by timestamp
-      const allActivities = [...persistedActivities, ...databaseActivities];
-      
-      // Remove duplicates (prefer database version over local)
-      const uniqueActivities = allActivities.reduce((acc, activity) => {
-        const existing = acc.find(a => a.id === activity.id);
-        if (!existing) {
-          acc.push(activity);
-        } else if (activity.source === 'database' && existing.source === 'local') {
-          // Replace local version with database version
-          const index = acc.findIndex(a => a.id === activity.id);
-          acc[index] = activity;
-        }
-        return acc;
-      }, [] as ActivityItem[]);
-      
       // Sort by timestamp (newest first) and limit to 20
-      const sortedActivities = uniqueActivities
+      const sortedActivities = activities
+      
         .sort((a, b) => {
           const timeA = new Date(a.timestamp.includes('ago') ? Date.now() : a.timestamp).getTime();
           const timeB = new Date(b.timestamp.includes('ago') ? Date.now() : b.timestamp).getTime();
@@ -222,25 +167,19 @@ export function useRecentActivity() {
     } catch (err) {
       console.error('Error fetching recent activity:', err);
       setError('Failed to fetch recent activity');
-      // Fallback to persisted data on error
-      const persistedActivities = loadPersistedData();
-      if (persistedActivities.length > 0) {
-        setActivities(persistedActivities.slice(0, 20));
-      } else {
-        // Show sample data only if no persisted data
-        setActivities([
-          {
-            id: 'sample-1',
-            type: 'general',
-            title: 'Welcome to TechMandates',
-            description: 'Connect repositories and run scans to see recent activity here',
-            timestamp: 'Just now',
-            status: 'pending',
-            repository: 'Getting Started',
-            source: 'local'
-          }
-        ]);
-      }
+      // Fallback to sample data on error
+      setActivities([
+        {
+          id: 'sample-1',
+          type: 'general',
+          title: 'Welcome to TechMandates',
+          description: 'Connect repositories and run scans to see recent activity here',
+          timestamp: 'Just now',
+          status: 'pending',
+          repository: 'Getting Started',
+          source: 'local'
+        }
+      ]);
     } finally {
       setLoading(false);
     }
@@ -250,56 +189,9 @@ export function useRecentActivity() {
     fetchRecentActivity();
   }, [user]);
 
-  // Listen for changes in localStorage to update activities in real-time
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'scannedVulnerabilities' || e.key === 'scannedUpgrades') {
-        // Refresh activities when vulnerabilities or upgrades change
-        fetchRecentActivity();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  // Set up real-time subscription for new scan results
-  useEffect(() => {
-    if (!user) return;
-
-    const channel = sqlite
-      .channel('scan-results-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'scan_results'
-        },
-        async (payload) => {
-          // Fetch the repository information for the new scan result
-          const { data: repository } = await sqlite
-            .from('repositories')
-            .select('id, name, full_name, user_id')
-            .eq('id', payload.new.repository_id)
-            .eq('user_id', user.id)
-            .single();
-
-          if (repository) {
-            const newActivity = generateActivityFromScanResult(payload.new, repository, 'database');
-            setActivities(prev => {
-              const filtered = prev.filter(a => a.id !== newActivity.id); // Remove any existing
-              return [newActivity, ...filtered].slice(0, 20); // Keep only 20 most recent
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      sqlite.removeChannel(channel);
-    };
-  }, [user]);
+  // Note: Real-time updates are now handled by the backend
+  // In a production environment, you might want to implement WebSocket connections
+  // or Server-Sent Events for real-time updates
 
   return {
     activities,

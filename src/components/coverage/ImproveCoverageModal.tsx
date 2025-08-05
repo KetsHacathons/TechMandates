@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useToast } from "@/hooks/use-toast";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { 
   TestTube2,
   Target,
@@ -65,15 +65,15 @@ export function ImproveCoverageModal({ open, onOpenChange }: ImproveCoverageModa
     
     setIsRefreshing(true);
     try {
-      const { data, error } = await sqlite.functions.invoke('fetch-coverage-data', {
-        body: { repositoryIds: repositories.map(r => r.id) }
+      const result = await apiClient.fetchCoverageData({
+        repositoryIds: repositories.map(r => r.id)
       });
 
-      if (error) {
-        throw error;
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to fetch coverage data');
       }
 
-      const results = data?.results || [];
+      const results = result.data?.results || [];
       const successCount = results.filter((r: any) => r.success).length;
 
       if (successCount > 0) {
@@ -151,7 +151,7 @@ export function ImproveCoverageModal({ open, onOpenChange }: ImproveCoverageModa
     setImprovements(initialImprovements);
 
     try {
-      // Prepare repository data for the edge function
+      // Prepare repository data for the API
       const selectedRepos = selectedRepositories.map(repoId => {
         const repo = repositoriesWithCoverage.find(r => r.id === repoId);
         return {
@@ -172,13 +172,13 @@ export function ImproveCoverageModal({ open, onOpenChange }: ImproveCoverageModa
         return updated;
       });
 
-      // Call the edge function
-      const { data, error } = await sqlite.functions.invoke('improve-coverage', {
-        body: { repositories: selectedRepos }
+      // Call the API
+      const result = await apiClient.improveCoverage({
+        repositories: selectedRepos
       });
 
-      if (error) {
-        throw error;
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to improve coverage');
       }
 
       // Update status to generating for all repos
@@ -191,7 +191,7 @@ export function ImproveCoverageModal({ open, onOpenChange }: ImproveCoverageModa
       });
 
       // Process results
-      const results = data?.results || [];
+      const results = result.data?.results || [];
       let successCount = 0;
 
       results.forEach((result: any) => {

@@ -22,7 +22,7 @@ import {
 
 const Index = () => {
   const { user, loading, signOut } = useAuth();
-  const { totalRepositories, pendingUpdates, vulnerabilities, testCoverage, loading: metricsLoading } = useDashboardMetrics();
+  const { total_repositories, pending_updates, vulnerabilities, test_coverage, loading: metricsLoading } = useDashboardMetrics();
 
   if (loading) {
     return (
@@ -64,16 +64,16 @@ const Index = () => {
   const overviewMetrics = [
     {
       title: "Total Repositories",
-      value: metricsLoading ? "..." : totalRepositories,
+      value: metricsLoading ? "..." : total_repositories,
       description: "Across GitHub & BitBucket",
       icon: GitBranch,
     },
     {
       title: "Pending Updates",
-      value: metricsLoading ? "..." : pendingUpdates,
+      value: metricsLoading ? "..." : pending_updates,
       description: "Version upgrades needed",
       icon: RefreshCw,
-      variant: pendingUpdates > 0 ? "warning" as const : undefined,
+      variant: pending_updates > 0 ? "warning" as const : undefined,
     },
     {
       title: "Vulnerabilities",
@@ -84,7 +84,7 @@ const Index = () => {
     },
     {
       title: "Test Coverage",
-      value: metricsLoading ? "..." : testCoverage,
+      value: metricsLoading ? "..." : test_coverage,
       description: "Average across all repos",
       icon: TestTube2,
       variant: "success" as const,

@@ -12,12 +12,8 @@ import { ScanUpdatesModal } from "@/components/upgrade/ScanUpdatesModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRepositories } from "@/hooks/useRepositories";
-<<<<<<< HEAD
-import { sqlite } from "@/integrations/sqlite/client";
-=======
+import { apiClient } from "@/integrations/api/client";
 import { usePrivateRepositories } from "@/hooks/usePrivateRepositories";
-import { supabase } from "@/integrations/supabase/client";
->>>>>>> 5d3ebe8bd46e16fd31843d9ef12ab3a9712ecfbc
 import { 
   RefreshCw,
   Package,
@@ -46,7 +42,7 @@ const Versions = () => {
   const [isAutoUpdateConfigOpen, setIsAutoUpdateConfigOpen] = useState(false);
   const [isScanUpdatesOpen, setIsScanUpdatesOpen] = useState(false);
   const [isCreatingUpgrade, setIsCreatingUpgrade] = useState(false);
-  // Load upgrades from localStorage on component mount
+  // Load upgrades from API
   const [scannedUpgrades, setScannedUpgrades] = useState<Array<{
     repository: string;
     repositoryId: string;
@@ -56,16 +52,22 @@ const Versions = () => {
     targetVersion: string;
     status: string;
     priority: string;
-  }>>(() => {
-    // Load from localStorage on initialization
-    const saved = localStorage.getItem('scannedUpgrades');
-    return saved ? JSON.parse(saved) : [];
-  });
+  }>>([]);
 
-  // Save to localStorage whenever upgrades change
+  // Load upgrades on component mount
   useEffect(() => {
-    localStorage.setItem('scannedUpgrades', JSON.stringify(scannedUpgrades));
-  }, [scannedUpgrades]);
+    const loadUpgrades = async () => {
+      try {
+        const result = await apiClient.getUpgrades();
+        if (result.data?.success) {
+          setScannedUpgrades(result.data.upgrades || []);
+        }
+      } catch (error) {
+        console.error('Failed to load upgrades:', error);
+      }
+    };
+    loadUpgrades();
+  }, []);
 
   const handleStartUpgrade = async (data: { repositoryId: string; technology: string; targetVersion: string }) => {
     const selectedRepo = allRepositories.find(repo => repo.id === data.repositoryId);
@@ -77,42 +79,36 @@ const Versions = () => {
         description: `Creating branch and PR for ${data.technology} upgrade to ${data.targetVersion}...`
       });
 
-      const { data: result, error } = await sqlite.functions.invoke('create-upgrade-pr', {
-        body: {
-          repositoryId: data.repositoryId,
-          technology: data.technology,
-          targetVersion: data.targetVersion
-        }
+      const result = await apiClient.createUpgradePR({
+        repositoryId: data.repositoryId,
+        technology: data.technology,
+        targetVersion: data.targetVersion
       });
 
-      if (error) {
-        throw error;
+      if (!result.data?.success) {
+        throw new Error(result.error || 'Failed to create upgrade PR');
       }
 
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-
-      toast({
-        title: "Pull Request Created! 🎉",
-        description: (
-          <div className="space-y-2">
-            <p>Successfully created PR #{result.pullRequestNumber} for {selectedRepo?.full_name}</p>
-            <p className="text-sm text-muted-foreground">
-              Please review and merge the pull request to complete the upgrade.
-            </p>
-            <a 
-              href={result.pullRequestUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-primary hover:underline"
-            >
-              View Pull Request →
-            </a>
-          </div>
-        ),
-        duration: 10000,
-      });
+              toast({
+          title: "Pull Request Created! 🎉",
+          description: (
+            <div className="space-y-2">
+              <p>Successfully created PR #{result.data.pullRequestNumber} for {selectedRepo?.full_name}</p>
+              <p className="text-sm text-muted-foreground">
+                Please review and merge the pull request to complete the upgrade.
+              </p>
+              <a 
+                href={result.data.pullRequestUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-primary hover:underline"
+              >
+                View Pull Request →
+              </a>
+            </div>
+          ),
+          duration: 10000,
+        });
 
     } catch (error) {
       console.error('Upgrade creation failed:', error);

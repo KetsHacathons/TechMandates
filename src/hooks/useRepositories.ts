@@ -1,18 +1,7 @@
 import { useState, useEffect } from 'react';
-import { sqlite } from '@/integrations/sqlite/client';
+import { apiClient } from '@/integrations/api/client';
+import { Repository } from '@/integrations/api/types';
 import { useAuth } from '@/contexts/AuthContext';
-
-export interface Repository {
-  id: string;
-  name: string;
-  full_name: string;
-  provider: string;
-  language: string | null;
-  description: string | null;
-  coverage_percentage: number | null;
-  test_count: number | null;
-  last_coverage_update: string | null;
-}
 
 export function useRepositories() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
@@ -22,30 +11,43 @@ export function useRepositories() {
 
   const fetchRepositories = async () => {
     if (!user) {
-      setRepositories([]);
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      const { data, error } = await sqlite
-        .from('repositories')
-        .select('id, name, full_name, provider, language, description, coverage_percentage, test_count, last_coverage_update')
-        .eq('user_id', user.id)
-        .order('name');
-
-      if (error) {
-        console.error('Error fetching repositories:', error);
-        setError(error.message);
-      } else {
-        setRepositories(data || []);
-      }
-    } catch (err) {
+      setError(null);
+      
+      const response = await apiClient.getRepositories();
+      setRepositories(response.repositories || []);
+    } catch (err: any) {
       console.error('Error fetching repositories:', err);
-      setError('Failed to fetch repositories');
+      setError(err.message || 'Failed to fetch repositories');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const createRepository = async (repoData: any) => {
+    try {
+      const newRepo = await apiClient.createRepository(repoData);
+      setRepositories(prev => [newRepo, ...prev]);
+      return { success: true, error: null };
+    } catch (err: any) {
+      console.error('Error creating repository:', err);
+      return { success: false, error: err.message || 'Failed to create repository' };
+    }
+  };
+
+  const deleteRepository = async (repoId: string) => {
+    try {
+      await apiClient.deleteRepository(repoId);
+      setRepositories(prev => prev.filter(repo => repo.id !== repoId));
+      return { success: true, error: null };
+    } catch (err: any) {
+      console.error('Error deleting repository:', err);
+      return { success: false, error: err.message || 'Failed to delete repository' };
     }
   };
 
@@ -53,5 +55,12 @@ export function useRepositories() {
     fetchRepositories();
   }, [user]);
 
-  return { repositories, loading, error, refetch: fetchRepositories };
+  return {
+    repositories,
+    loading,
+    error,
+    refetch: fetchRepositories,
+    createRepository,
+    deleteRepository,
+  };
 }

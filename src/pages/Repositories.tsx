@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { sqlite } from '@/integrations/sqlite/client';
+import { apiClient } from '@/integrations/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,14 +74,8 @@ export default function Repositories() {
 
   const fetchRepositories = async () => {
     try {
-      const { data, error } = await sqlite
-        .from('repositories')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setRepositories(data || []);
+      const response = await apiClient.getRepositories();
+      setRepositories(response.repositories || []);
     } catch (error) {
       toast({
         title: "Error fetching repositories",
@@ -162,12 +156,9 @@ export default function Repositories() {
       const repoData = await fetchGitHubRepoData(parsed.owner, parsed.repo);
       
       // Check if repository already exists
-      const { data: existingRepo } = await sqlite
-        .from('repositories')
-        .select('id')
-        .eq('external_id', repoData.id.toString())
-        .eq('user_id', user?.id)
-        .single();
+      const existingRepo = repositories.find(repo => 
+        repo.external_id === repoData.id.toString()
+      );
 
       if (existingRepo) {
         toast({
@@ -179,23 +170,19 @@ export default function Repositories() {
       }
 
       // Save repository to database
-      const { error } = await sqlite
-        .from('repositories')
-        .insert({
-          user_id: user?.id,
-          name: repoData.name,
-          full_name: repoData.full_name,
-          provider: 'github',
-          external_id: repoData.id.toString(),
-          clone_url: repoData.clone_url,
-          default_branch: repoData.default_branch || 'main',
-          description: repoData.description,
-          language: repoData.language,
-          is_private: repoData.private,
-          scan_status: 'pending'
-        });
-
-      if (error) throw error;
+      await apiClient.createRepository({
+        user_id: user?.id,
+        name: repoData.name,
+        full_name: repoData.full_name,
+        provider: 'github',
+        external_id: repoData.id.toString(),
+        clone_url: repoData.clone_url,
+        default_branch: repoData.default_branch || 'main',
+        description: repoData.description,
+        language: repoData.language,
+        is_private: repoData.private,
+        scan_status: 'pending'
+      });
 
       toast({
         title: "Repository connected successfully",

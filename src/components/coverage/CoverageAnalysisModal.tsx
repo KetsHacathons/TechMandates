@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { type Repository } from "@/hooks/useRepositories";
-import { sqlite } from "@/integrations/sqlite/client";
+import { apiClient } from "@/integrations/api/client";
 import { TestTube2, Package, RefreshCw, TrendingUp, AlertTriangle } from "lucide-react";
 
 interface CoverageAnalysisModalProps {
@@ -105,24 +105,22 @@ export function CoverageAnalysisModal({ open, onOpenChange, repositories, onAnal
         const previousCoverage = Math.floor(Math.random() * 40) + 60; // 60-100%
         const trend = currentCoverage - previousCoverage;
 
-        // Store coverage result in scan_results table
-        const { error: insertError } = await sqlite
-          .from('scan_results')
-          .insert({
-            repository_id: repositoryId,
-            scan_type: 'coverage',
-            title: 'Test Coverage Analysis',
-            description: `Test coverage analysis for ${repo.name}`,
-            status: 'open',
-            coverage_percentage: currentCoverage,
-            metadata: {
-              previousCoverage,
-              trend,
-              analyzedAt: new Date().toISOString()
-            }
-          });
+        // Store coverage result via API
+        const result = await apiClient.runCoverageScan({
+          repositoryId,
+          scanType: 'coverage',
+          title: 'Test Coverage Analysis',
+          description: `Test coverage analysis for ${repo.name}`,
+          status: 'open',
+          coverage_percentage: currentCoverage,
+          metadata_json: JSON.stringify({
+            previousCoverage,
+            trend,
+            analyzedAt: new Date().toISOString()
+          })
+        });
 
-        if (!insertError) {
+        if (result.data?.success) {
           allResults.push({
             repository: repo.name,
             repositoryId: repo.id,
@@ -145,7 +143,7 @@ export function CoverageAnalysisModal({ open, onOpenChange, repositories, onAnal
               : item
           ));
         } else {
-          console.error(`Error storing coverage for ${repo.name}:`, insertError);
+          console.error(`Error storing coverage for ${repo.name}:`, result.error);
           setAnalysisProgress(prev => prev.map(item => 
             item.repositoryId === repositoryId 
               ? { ...item, isAnalyzing: false, isComplete: true, coverage: null }
